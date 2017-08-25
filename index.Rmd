@@ -1,0 +1,14 @@
+---
+title: "ExerciseCorrectnessPrediction"
+author: "Juan Carlos Moreno Reina"
+date: "25 de agosto de 2017"
+output: html_document
+---
+
+## Executive Summary
+
+## Exploratory data analysis
+
+## Fitting prediction models
+
+## Conclusions
