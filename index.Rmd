@@ -27,7 +27,7 @@ qplot(training_dat$classe, main="Frequency of quality types",
 ```
 
 It can be observed that we have a huge training set, with 19622 records and 160
-variables, where the most frequent quality classificaiton is A. Moreover, there 
+variables, where the most frequent quality classification is A. Moreover, there 
 are many variables with NA values since some of them are
 statistics calculated/registered with less frequency. Therefore, I will consider
 only the variables that are raw measurements in the different axis from the 4 
@@ -86,14 +86,14 @@ testing <- orig_training[-inTrain,]
 ```
 
 Since there are still too many covariates and, most likely, many of them are very 
-correlated and aren't useful for my model. I will use the Principal Components 
+correlated and aren't useful for my model, I will use the Principal Components 
 Analysis to reduce the number of covariates.
 
-In a first attempt I set the threshold to 0.9 in the preProcess function, so that
-the function will return the number of Principal Components needed to capture the
+In a first attempt, I set the threshold to 0.9 in the preProcess function, so that
+the function returned the number of Principal Components needed to capture the
 90% of the variance. However, since I got a very poor accuracy, I increased the
 threshold to 0.99, what reduced the number of covariates from 48 to 35 Principal
-components
+Components.
 
 ```{r}
 preProc <- preProcess(training[,-49],method="pca",thresh=0.99,na.remove = TRUE)
@@ -102,11 +102,11 @@ trainPC$classe <- training$classe
 testPC <- predict(preProc,testing[,-49])
 ```
 
-Finally I will develop the training model. Actually, I will fit three different
+Finally, I will develop the training model. Actually, I will fit three different
 models, with three different techniques (Random forest, Boosting and combining
 predictors). Then, I will pick the model with the highest accuracy. It is worth
 mentioning here that the methods "rf" and "gbm" will carry out the Cross Validation
-procedure using the K-fold technique with number of folds equal to five (k=5), as
+procedure using the K-fold technique with number of folds equals to five (k=5), as
 I previously configured.
 
 ```{r modelfit1, cache = TRUE,results='hide',message=F, warning=F}
@@ -114,7 +114,7 @@ modelFit_rf <- train(classe ~ .,method="rf",data=trainPC,trControl = fitControl)
 modelFit_gbm <- train(classe ~ .,method="gbm",data=trainPC,trControl = fitControl,verbose=F)
 ```
 
-```{r}
+```{r,cache = TRUE,results='hide',message=F, warning=F}
 predict_rf <- predict(modelFit_rf,testPC)
 predict_gbm <- predict(modelFit_gbm,testPC)
 combinedTestData <- data.frame(rf.pred=predict_rf, gbm.pred = predict_gbm, classe=testing$classe)
@@ -124,7 +124,7 @@ modelFit_combined <- train(classe~ .,data=combinedTestData,method="rf",prox=TRUE
 
 ``` 
 
-```{r modelfit2, cache = TRUE}
+```{r modelfit2, cache = TRUE,results='hide',message=F, warning=F}
 predict_combined <- predict(modelFit_combined,combinedTestData)
 confMatrix_rf<-confusionMatrix(testing$classe,predict_rf)
 confMatrix_gbm<-confusionMatrix(testing$classe,predict_gbm)
@@ -136,7 +136,7 @@ data.frame(Accuracy_rf=confMatrix_rf$overall[1],Accuracy_gbm=confMatrix_gbm$over
 
 So we can see that we got very similar accuracies with the random forest and the 
 combined predictors that, in turns, is higher that the accuracy obtained with the
-boosting predictor (all of them using the testing data set). Therefore, I will choose 
+boosting predictor (all of them using the testing subset). Therefore, I will choose 
 the random forest predictor (see the complete confusion matrix below) 
 
 ```{r}
@@ -158,9 +158,9 @@ registerDoSEQ()
 ```
 
 ## Conclusions
-After cleaning up the training data set I could fit a very accurate model (using
+After cleaning up the training data set, I could fit a very accurate model (using
 the random forest technique) to predict the quality of the barbell lifts: 
 I measured an accuracy of 98.26% (On the testing subset that I created from the
 data loaded from the csv file "pml-training.csv"), so the expected sample error is
-1 -accuracy = 1.74%. The 95% confident interval of this accuracy is (0.98, 0.9872). 
+1 - accuracy = 1.74%. The 95% confident interval of this accuracy is (0.98, 0.9872). 
 Then, I could predict the quality of the 20 exercises in the csv file "pml-testing.csv".
