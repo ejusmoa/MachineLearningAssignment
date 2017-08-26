@@ -1,14 +1,166 @@
 ---
-title: "ExerciseCorrectnessPrediction"
+title: "Exercise Quality Prediction"
 author: "Juan Carlos Moreno Reina"
-date: "25 de agosto de 2017"
+date: "August 27, 2017"
 output: html_document
 ---
 
 ## Executive Summary
+The goal of this project is to predict the manner in which a group of people 
+did an exercise, based on the measurements collected from accelerometers on the belt, 
+forearm, arm, and dumbbell of 6 participants. These participants were asked to 
+perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+A prediction model will be built using the training data and the goodness of this 
+model will be assessed. Finally, this prediction model will be used to predict 20 
+different test cases. 
 
 ## Exploratory data analysis
 
+```{r}
+library(ggplot2)
+training_dat <- read.csv("./pml-training.csv",header=TRUE,na.strings = c("","NA","#DIV/0!"))
+testing_dat <- read.csv("./pml-testing.csv",header=TRUE,na.strings = c("","NA","#DIV/0!"))
+dim(training_dat);dim(testing_dat)
+qplot(training_dat$classe, main="Frequency of quality types", 
+      xlab="Quality", ylab="Frequency")
+```
+
+It can be observed that we have a huge training set, with 19622 records and 160
+variables, where the most frequent quality classificaiton is A. Moreover, there 
+are many variables with NA values since some of them are
+statistics calculated/registered with less frequency. Therefore, I will consider
+only the variables that are raw measurements in the different axis from the 4 
+wearable devices.
+
+```{r}
+orig_training <- training_dat[,c(grep("^accel_.*",names(training_dat), value=T),
+                                 grep("^gyros_.*",names(training_dat), value=T),
+                                 grep("^magnet_.*",names(training_dat), value=T),
+                                 grep("^roll_.*",names(training_dat), value=T),
+                                 grep("^pitch_.*",names(training_dat), value=T),
+                                 grep("^yaw_.*",names(training_dat), value=T),
+                                 "classe")]
+orig_testing <- testing_dat[,c(grep("^accel_.*",names(training_dat), value=T),
+                                 grep("^gyros_.*",names(training_dat), value=T),
+                                 grep("^magnet_.*",names(training_dat), value=T),
+                                 grep("^roll_.*",names(training_dat), value=T),
+                                 grep("^pitch_.*",names(training_dat), value=T),
+                                 grep("^yaw_.*",names(training_dat), value=T))]
+data.frame("Any NA in training"=anyNA(orig_training),"Any NA in testing"=anyNA(orig_testing))
+
+```
+
+Now, we can see that the NA values have been removed from both, the training and 
+the testing data set.
+
 ## Fitting prediction models
+First of all, I will configure the parallel processing for a better performance
+
+```{r,results='hide',message=F, warning=F}
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+```
+
+Then, I will configure trainControl object, so that the number of folds for the
+k-fold cross validation is set to 5, instead of 25 (default value), increasing the
+bias but decreasing the variance and gaining in performance again.
+
+```{r,results='hide',message=F, warning=F}
+library(caret)
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
+```
+
+Before fitting my prediction model, I will split my data set into the training
+and the testing set, as usual:
+
+```{r}
+set.seed(33833)
+inTrain <- createDataPartition(y=orig_training$classe,p=0.75, list=FALSE)
+training <- orig_training[inTrain,]
+testing <- orig_training[-inTrain,]
+```
+
+Since there are still too many covariates and, most likely, many of them are very 
+correlated and aren't useful for my model. I will use the Principal Components 
+Analysis to reduce the number of covariates.
+
+In a first attempt I set the threshold to 0.9 in the preProcess function, so that
+the function will return the number of Principal Components needed to capture the
+90% of the variance. However, since I got a very poor accuracy, I increased the
+threshold to 0.99, what reduced the number of covariates from 48 to 35 Principal
+components
+
+```{r}
+preProc <- preProcess(training[,-49],method="pca",thresh=0.99,na.remove = TRUE)
+trainPC <- predict(preProc,training[,-49])
+trainPC$classe <- training$classe
+testPC <- predict(preProc,testing[,-49])
+```
+
+Finally I will develop the training model. Actually, I will fit three different
+models, with three different techniques (Random forest, Boosting and combining
+predictors). Then, I will pick the model with the highest accuracy. It is worth
+mentioning here that the methods "rf" and "gbm" will carry out the Cross Validation
+procedure using the K-fold technique with number of folds equal to five (k=5), as
+I previously configured.
+
+```{r modelfit1, cache = TRUE,results='hide',message=F, warning=F}
+modelFit_rf <- train(classe ~ .,method="rf",data=trainPC,trControl = fitControl)
+modelFit_gbm <- train(classe ~ .,method="gbm",data=trainPC,trControl = fitControl,verbose=F)
+```
+
+```{r}
+predict_rf <- predict(modelFit_rf,testPC)
+predict_gbm <- predict(modelFit_gbm,testPC)
+combinedTestData <- data.frame(rf.pred=predict_rf, gbm.pred = predict_gbm, classe=testing$classe)
+```
+```{r modelfit, cache = TRUE}
+modelFit_combined <- train(classe~ .,data=combinedTestData,method="rf",prox=TRUE,trControl = fitControl)
+
+``` 
+
+```{r modelfit2, cache = TRUE}
+predict_combined <- predict(modelFit_combined,combinedTestData)
+confMatrix_rf<-confusionMatrix(testing$classe,predict_rf)
+confMatrix_gbm<-confusionMatrix(testing$classe,predict_gbm)
+confMatrix_combined<-confusionMatrix(testing$classe,predict_combined)
+data.frame(Accuracy_rf=confMatrix_rf$overall[1],Accuracy_gbm=confMatrix_gbm$overall[1],
+           Accuracy_combined=confMatrix_combined$overall[1])
+
+```
+
+So we can see that we got very similar accuracies with the random forest and the 
+combined predictors that, in turns, is higher that the accuracy obtained with the
+boosting predictor (all of them using the testing data set). Therefore, I will choose 
+the random forest predictor (see the complete confusion matrix below) 
+
+```{r}
+confMatrix_rf
+```
+
+Finally, I will predict the quality in the original testing data set, that I loaded 
+from the csv file "pml-testing.csv".
+```{r}
+origtestPC <- predict(preProc,orig_testing)
+orig_predict_rf <- predict(modelFit_rf,origtestPC)
+orig_predict_rf
+```
+
+De-register parallel processing cluster
+```{r}
+stopCluster(cluster)
+registerDoSEQ()
+```
 
 ## Conclusions
+After cleaning up the training data set I could fit a very accurate model (using
+the random forest technique) to predict the quality of the barbell lifts: 
+I measured an accuracy of 98.26% (On the testing subset that I created from the
+data loaded from the csv file "pml-training.csv"), so the expected sample error is
+1 -accuracy = 1.74%. The 95% confident interval of this accuracy is (0.98, 0.9872). 
+Then, I could predict the quality of the 20 exercises in the csv file "pml-testing.csv".
